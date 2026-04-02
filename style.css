@@ -1,0 +1,176 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: sans-serif;
+}
+
+body {
+  background: #f8f5f3;
+}
+
+/* NAVBAR */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  padding: 20px 60px;
+}
+
+.logo {
+  font-weight: bold;
+}
+
+.nav a {
+  margin-right: 15px;
+  text-decoration: none;
+  color: black;
+}
+
+.btn {
+  padding: 10px 20px;
+  border-radius: 20px;
+  border: none;
+  cursor: pointer;
+}
+
+.join {
+  background: linear-gradient(to right, #ff4d6d, #ff7a18);
+  color: white;
+}
+
+/* HERO */
+.hero {
+  display: flex;
+  justify-content: space-between;
+  padding: 60px;
+  flex-wrap: wrap;
+}
+
+.left {
+  width: 50%;
+}
+
+.badge {
+  background: #ffd6dc;
+  padding: 5px 10px;
+  border-radius: 20px;
+}
+
+h1 {
+  font-size: 45px;
+  margin: 20px 0;
+}
+
+h1 span {
+  color: #ff4d6d;
+}
+
+p {
+  color: #555;
+}
+
+.buttons {
+  margin: 20px 0;
+}
+
+.main {
+  background: linear-gradient(to right, #ff4d6d, #ff7a18);
+  color: white;
+}
+
+.outline {
+  border: 1px solid #ccc;
+  background: white;
+}
+
+.stats {
+  display: flex;
+  gap: 30px;
+  margin-top: 20px;
+}
+
+/* CARD */
+.right {
+  width: 40%;
+}
+
+.card {
+  position: relative;
+}
+
+.card img {
+  width: 100%;
+  border-radius: 20px;
+}
+
+.card-text {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  color: white;
+}
+
+.popup {
+  position: absolute;
+  top: -20px;
+  right: -20px;
+  background: white;
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.online {
+  position: absolute;
+  bottom: -20px;
+  left: -20px;
+  background: white;
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+/* LOVE */
+.love {
+  text-align: center;
+  padding: 80px 20px;
+}
+
+.cards {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin-top: 30px;
+}
+
+.box {
+  background: white;
+  padding: 20px;
+  border-radius: 15px;
+  width: 280px;
+}
+
+/* CTA */
+.cta {
+  display: flex;
+  justify-content: center;
+  padding: 80px 20px;
+}
+
+.cta-box {
+  background: linear-gradient(to right, #ff4d6d, #ff7a18);
+  padding: 50px;
+  border-radius: 25px;
+  text-align: center;
+  color: white;
+  width: 500px;
+}
+
+.cta-box button {
+  margin-top: 20px;
+  padding: 12px 25px;
+  border-radius: 20px;
+  border: none;
+  background: white;
+  color: #ff4d6d;
+}

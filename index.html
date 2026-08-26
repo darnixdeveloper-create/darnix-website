@@ -843,13 +843,13 @@ button { font-family: 'DM Sans', sans-serif; cursor: pointer; border: none; outl
       <div class="field"><label>Email</label><input type="email" placeholder="you@email.com" /></div>
       <div class="field"><label>Password</label><input type="password" placeholder="Create password" /></div>
       <div class="field"><label>I am a</label><select><option>Man</option><option>Woman</option><option>Prefer not to say</option></select></div>
-      <button class="modal-submit" onclick="enterApp()">Create Account →</button>
+      <button class="modal-submit" onclick="handleSignup()">Create Account →</button>
       <p class="modal-switch">Already have an account? <a onclick="switchModal('signin')">Sign in</a></p>
     </div>
     <div id="signinForm" style="display:none;">
       <div class="field"><label>Email</label><input type="email" placeholder="you@email.com" /></div>
       <div class="field"><label>Password</label><input type="password" placeholder="Your password" /></div>
-      <button class="modal-submit" onclick="enterApp()">Sign In →</button>
+      <button class="modal-submit" onclick="handleSignin()">Sign In →</button>
       <p class="modal-switch">New to Clark? <a onclick="switchModal('signup')">Join free</a></p>
     </div>
   </div>
@@ -956,10 +956,21 @@ button { font-family: 'DM Sans', sans-serif; cursor: pointer; border: none; outl
 <div class="app-toast" id="appToast">✅ Imehifadhiwa!</div>
 
 
+<!-- SUPABASE -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
 <!-- ══════════════════════════════════════
      JAVASCRIPT
 ══════════════════════════════════════ -->
 <script>
+// ===== DARNIX SUPABASE CONFIG =====
+const SUPABASE_URL = 'https://yiohtpkngzhraiicgeco.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hQpN1AO_sSrwqpWFolXmHw_vOWtErX3';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+let currentUser = null;
+let currentProfile = null;
+let currentMatch = null;
+let realtimeChannel = null;
 /* ─── DATA ─── */
 const profiles = [
   { name:"Sarah M.", age:26, loc:"Dar es Salaam", job:"Designer", tags:["Art","Coffee","Travel"], img:"https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=600&q=80" },
@@ -1036,14 +1047,118 @@ function switchModal(type) {
   document.getElementById('signupForm').style.display = isSignup ? 'block' : 'none';
   document.getElementById('signinForm').style.display = isSignup ? 'none' : 'block';
 }
-function enterApp() {
+function getSignupFields() {
+  const f = document.getElementById('signupForm');
+  const inputs = f.querySelectorAll('input');
+  const select = f.querySelector('select');
+  return { name: inputs[0]?.value.trim() || '', email: inputs[1]?.value.trim() || '', password: inputs[2]?.value || '', gender: select?.value || 'Prefer not to say' };
+}
+function getSigninFields() {
+  const f = document.getElementById('signinForm');
+  const inputs = f.querySelectorAll('input');
+  return { email: inputs[0]?.value.trim() || '', password: inputs[1]?.value || '' };
+}
+function normalizeGender(v) {
+  if (v === 'Man') return 'man';
+  if (v === 'Woman') return 'woman';
+  return 'other';
+}
+async function handleSignup() {
+  const {name,email,password,gender} = getSignupFields();
+  if (!name || !email || password.length < 6) { showToast('⚠️ Jaza jina, email na password ya angalau characters 6.'); return; }
+  if (SUPABASE_PUBLISHABLE_KEY.includes('PASTE_YOUR')) { showToast('⚠️ Weka Publishable Key ya Supabase kwanza.'); return; }
+  const btn = document.querySelector('#signupForm .modal-submit');
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating account...'; }
+  const {data,error} = await sb.auth.signUp({ email, password, options:{ data:{ full_name:name, gender:normalizeGender(gender) } } });
+  if (btn) { btn.disabled = false; btn.textContent = 'Create Account →'; }
+  if (error) { showToast('❌ ' + error.message); return; }
+  if (!data.session) { showToast('✅ Account created! Angalia email yako kuthibitisha account.'); return; }
+  currentUser = data.user;
+  await loadCurrentProfile();
   closeModal();
   showApp();
-  buildSwipeCards();
-  buildMatchesUI();
-  buildChatUI(currentChatPerson);
+  await refreshAppData();
+  showToast('🎉 Umejiunga na Darnix!');
+}
+async function handleSignin() {
+  const {email,password} = getSigninFields();
+  if (!email || !password) { showToast('⚠️ Weka email na password.'); return; }
+  const btn = document.querySelector('#signinForm .modal-submit');
+  if (btn) { btn.disabled = true; btn.textContent = 'Signing in...'; }
+  const {data,error} = await sb.auth.signInWithPassword({email,password});
+  if (btn) { btn.disabled = false; btn.textContent = 'Sign In →'; }
+  if (error) { showToast('❌ ' + error.message); return; }
+  currentUser = data.user;
+  await loadCurrentProfile();
+  closeModal();
+  showApp();
+  await refreshAppData();
+  showToast('👋 Karibu tena!');
+}
+async function enterApp() {
+  // Kept for old buttons; authentication is now handled by handleSignup/handleSignin.
+  if (currentUser) { closeModal(); showApp(); await refreshAppData(); }
+}
+async function loadCurrentProfile() {
+  if (!currentUser) return null;
+  let {data,error} = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+  if (error) { showToast('❌ Profile error: ' + error.message); return null; }
+  if (!data) {
+    const meta = currentUser.user_metadata || {};
+    const payload = {id:currentUser.id, full_name:meta.full_name || 'Darnix User', gender:meta.gender || 'other'};
+    const r = await sb.from('profiles').upsert(payload).select().single();
+    data = r.data; error = r.error;
+    if (error) { showToast('❌ Could not create profile: ' + error.message); return null; }
+  }
+  currentProfile = data;
+  applyProfileToUI(data);
+  return data;
+}
+function applyProfileToUI(p) {
+  if (!p) return;
+  const name = p.full_name || 'Darnix User';
+  document.getElementById('profileName').textContent = `${name}, ${p.age || 18}`;
+  document.getElementById('profileHandle').textContent = `@${name.toLowerCase().replace(/[^a-z0-9]+/g,'')} · ${p.location || 'Tanzania'}`;
+  document.getElementById('profileBio').textContent = p.bio || 'Ongeza bio yako kwenye Edit Profile.';
+  const avatar = p.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&q=80';
+  document.getElementById('profileAvatar').src = avatar;
+  document.getElementById('topbarAvatar').src = avatar;
+  if (document.getElementById('matchYourAv')) document.getElementById('matchYourAv').src = avatar;
+  selectedInterests = new Set(Array.isArray(p.interests) ? p.interests : []);
+  const interestsEl = document.getElementById('profileInterests');
+  if (interestsEl) {
+    const emojiMap = Object.fromEntries(allInterests.map(i => [i.label,i.emoji]));
+    interestsEl.innerHTML = '';
+    selectedInterests.forEach(x => { const s=document.createElement('span'); s.className='interest-tag'; s.textContent=`${emojiMap[x]||''} ${x}`; interestsEl.appendChild(s); });
+  }
+}
+async function refreshAppData() {
+  await loadCurrentProfile();
+  await loadDiscoverProfiles();
+  await loadMatches();
   renderPhotoGrid();
 }
+async function loadDiscoverProfiles() {
+  if (!currentUser) return;
+  const {data,error} = await sb.from('profiles').select('*').neq('id',currentUser.id).order('created_at',{ascending:false});
+  if (error) { showToast('❌ Discover error: ' + error.message); return; }
+  profiles.length = 0;
+  (data || []).forEach(p => profiles.push({id:p.id,name:p.full_name,age:p.age,loc:p.location||'Tanzania',job:p.job||'',tags:p.interests||[],img:p.avatar_url||'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=600&q=80'}));
+  buildSwipeCards();
+}
+async function loadMatches() {
+  if (!currentUser) return;
+  const {data,error} = await sb.from('matches').select('id,user1_id,user2_id,created_at').or(`user1_id.eq.${currentUser.id},user2_id.eq.${currentUser.id}`).order('created_at',{ascending:false});
+  if (error) { showToast('❌ Matches error: ' + error.message); return; }
+  const ids = (data||[]).map(m => m.user1_id===currentUser.id ? m.user2_id : m.user1_id);
+  if (!ids.length) { matchData.length=0; buildMatchesUI(); return; }
+  const {data:people,error:e2} = await sb.from('profiles').select('*').in('id',ids);
+  if (e2) { showToast('❌ Match profiles error: ' + e2.message); return; }
+  matchData.length=0;
+  (people||[]).forEach(p=>{ const m=(data||[]).find(x=>x.user1_id===p.id||x.user2_id===p.id); matchData.push({id:p.id,matchId:m.id,name:p.full_name,age:p.age,img:p.avatar_url||'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80',last:'Start a conversation 💬',time:'',unread:0,online:false}); });
+  buildMatchesUI();
+}
+
 document.getElementById('authModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
 
 
@@ -1134,24 +1249,23 @@ function buildEpInterestsPicker() {
   });
 }
 
-function saveEditProfile() {
-  // Hifadhi bio
-  const bio = document.getElementById('epBio').value;
-  document.getElementById('profileBio').textContent = bio;
-  // Hifadhi maslahi
-  const interestsEl = document.getElementById('profileInterests');
-  interestsEl.innerHTML = '';
-  const emojiMap = Object.fromEntries(allInterests.map(i => [i.label, i.emoji]));
-  selectedInterests.forEach(label => {
-    const span = document.createElement('span');
-    span.className = 'interest-tag';
-    span.textContent = `${emojiMap[label] || ''} ${label}`;
-    interestsEl.appendChild(span);
-  });
-  // Live preview ya jina na eneo
-  epLivePreview();
+async function saveEditProfile() {
+  if (!currentUser) { showToast('⚠️ Ingia kwanza.'); return; }
+  const first = document.getElementById('epFirstName').value.trim();
+  const last = document.getElementById('epLastName').value.trim();
+  const age = parseInt(document.getElementById('epAge').value,10);
+  const location = document.getElementById('epLocation').value.trim();
+  const bio = document.getElementById('epBio').value.trim();
+  if (!first || !age || age < 18) { showToast('⚠️ Weka jina na umri wa 18+.'); return; }
+  const full_name = `${first} ${last}`.trim();
+  const avatar_url = document.getElementById('profileAvatar').src || '';
+  const {data,error} = await sb.from('profiles').update({full_name,age,location,bio,interests:Array.from(selectedInterests),avatar_url,updated_at:new Date().toISOString()}).eq('id',currentUser.id).select().single();
+  if (error) { showToast('❌ ' + error.message); return; }
+  currentProfile=data;
+  applyProfileToUI(data);
   closeEditProfile();
-  showToast('✅ Profaili imehifadhiwa vizuri!');
+  showToast('✅ Profaili imehifadhiwa kwenye database!');
+  await loadDiscoverProfiles();
 }
 
 function showToast(msg) {
@@ -1254,21 +1368,23 @@ function advanceCard(direction) {
   }
 }
 
-function likeCard() {
-  if (currentCard >= cards.length) return;
+async function recordSwipe(action) {
+  if (!currentUser || currentCard >= profiles.length) return;
+  const p = profiles[currentCard];
+  const {data,error} = await sb.rpc('like_profile',{p_target_id:p.id,p_action:action});
+  if (error) { showToast('❌ ' + error.message); return; }
   advanceCard('right');
-  if (Math.random() < 0.4) {
-    const p = profiles[currentCard - 1];
-    setTimeout(() => showMatchOverlay(p), 600);
+  if (action === 'pass') return;
+  if (data?.matched) {
+    await loadMatches();
+    const matched = matchData.find(m=>m.id===p.id);
+    currentMatch = {id:data.match_id, personId:p.id};
+    setTimeout(()=>showMatchOverlay(p),500);
   }
 }
-function skipCard() { advanceCard('left'); }
-function superLike() {
-  if (currentCard >= cards.length) return;
-  const p = profiles[currentCard];
-  advanceCard('right');
-  setTimeout(() => showMatchOverlay(p), 600);
-}
+function likeCard(){ recordSwipe('like'); }
+function skipCard(){ recordSwipe('pass'); }
+function superLike(){ recordSwipe('superlike'); }
 function rewindCard() {
   if (currentCard === 0) return;
   currentCard--;
@@ -1346,10 +1462,12 @@ function buildMatchesUI() {
   });
 }
 
-function openChat(idx) {
+async function openChat(idx) {
   currentChatPerson = matchData[idx];
+  currentMatch = currentChatPerson;
   buildChatUI(currentChatPerson);
   switchTab('chat');
+  await loadChatMessages(currentChatPerson);
 }
 
 /* ─── CHAT UI ─── */
@@ -1364,53 +1482,43 @@ const chatHistories = {
 };
 
 function buildChatUI(person) {
+  if (!person) return;
   document.getElementById('chatAvatar').src = person.img;
   document.getElementById('chatName').textContent = person.name;
-  const msgs = document.getElementById('chatMessages');
-  msgs.innerHTML = '<div class="chat-date-divider"><span>Today</span></div>';
-  const history = chatHistories[person.name] || [
-    { from:'them', text:`Hey! We matched 🎉 Nice to meet you!`, time:"Just now" }
-  ];
-  history.forEach(m => appendMessage(m.from, m.text, m.time, false));
-  msgs.scrollTop = msgs.scrollHeight;
+  document.getElementById('chatMessages').innerHTML = '<div class="chat-date-divider"><span>Messages</span></div>';
 }
-
-function appendMessage(from, text, time, scroll=true) {
-  const msgs = document.getElementById('chatMessages');
-  const avatarSrc = from === 'them'
-    ? (currentChatPerson?.img || '')
-    : document.getElementById('profileAvatar').src;
-  const div = document.createElement('div');
-  div.className = `msg ${from}`;
-  div.innerHTML = `
-    ${from==='them' ? `<img class="msg-av" src="${avatarSrc}" alt="" />` : ''}
-    <div>
-      <div class="msg-bubble">${text}</div>
-      <div class="msg-time">${time}</div>
-    </div>`;
-  msgs.appendChild(div);
-  if (scroll) msgs.scrollTop = msgs.scrollHeight;
+async function loadChatMessages(person) {
+  if (!currentUser || !person?.matchId) return;
+  const {data,error}=await sb.from('messages').select('*').eq('match_id',person.matchId).order('created_at',{ascending:true});
+  if (error) { showToast('❌ Chat error: '+error.message); return; }
+  const msgs=document.getElementById('chatMessages');
+  msgs.innerHTML='<div class="chat-date-divider"><span>Messages</span></div>';
+  (data||[]).forEach(m=>appendMessage(m.sender_id===currentUser.id?'me':'them',m.body,new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),false));
+  msgs.scrollTop=msgs.scrollHeight;
+  subscribeToChat(person.matchId);
 }
-
-const autoReplies = [
-  "That's so cool! Tell me more 😊", "Haha yes!! I totally agree 😄",
-  "Wow, sounds amazing! ✨", "We should definitely do that sometime! 🔥",
-  "You're so fun to talk to 💕", "I was just thinking about that 😍",
-  "Really?! That's exactly how I feel!", "Okay now I'm even more interested 👀",
-];
-
-function sendMessage() {
-  const input = document.getElementById('chatInput');
-  const text = input.value.trim();
-  if (!text) return;
-  const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-  appendMessage('me', text, time);
-  input.value = '';
-  document.getElementById('emojiPicker').classList.remove('open');
-  setTimeout(() => {
-    const reply = autoReplies[Math.floor(Math.random() * autoReplies.length)];
-    appendMessage('them', reply, new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
-  }, 1200 + Math.random() * 1000);
+function subscribeToChat(matchId) {
+  if (realtimeChannel) sb.removeChannel(realtimeChannel);
+  realtimeChannel=sb.channel('chat-'+matchId).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'match_id=eq.'+matchId},payload=>{
+    const m=payload.new;
+    if (m.sender_id!==currentUser.id) appendMessage('them',m.body,new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
+  }).subscribe();
+}
+function appendMessage(from,text,time,scroll=true){
+  const msgs=document.getElementById('chatMessages');
+  const avatarSrc=from==='them'?(currentChatPerson?.img||''):document.getElementById('profileAvatar').src;
+  const div=document.createElement('div'); div.className=`msg ${from}`;
+  div.innerHTML=`${from==='them'?`<img class="msg-av" src="${avatarSrc}" alt="" />`:''}<div><div class="msg-bubble"></div><div class="msg-time">${time}</div></div>`;
+  div.querySelector('.msg-bubble').textContent=text;
+  msgs.appendChild(div); if(scroll) msgs.scrollTop=msgs.scrollHeight;
+}
+async function sendMessage(){
+  const input=document.getElementById('chatInput'); const text=input.value.trim();
+  if(!text || !currentUser || !currentChatPerson?.matchId) return;
+  const {data,error}=await sb.from('messages').insert({match_id:currentChatPerson.matchId,sender_id:currentUser.id,body:text}).select().single();
+  if(error){showToast('❌ '+error.message);return;}
+  appendMessage('me',data.body,new Date(data.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
+  input.value=''; document.getElementById('emojiPicker').classList.remove('open');
 }
 
 
@@ -1485,8 +1593,21 @@ function deletePhoto(idx) {
   showToast('🗑️ Picha imeondolewa');
 }
 
-// Render grid mara app inaanzishwa
-document.addEventListener('DOMContentLoaded', () => { renderPhotoGrid(); });
+// ===== APP STARTUP =====
+document.addEventListener('DOMContentLoaded', async () => {
+  renderPhotoGrid();
+  if (SUPABASE_PUBLISHABLE_KEY.includes('PASTE_YOUR')) return;
+  const {data} = await sb.auth.getSession();
+  if (data.session) {
+    currentUser=data.session.user;
+    await loadCurrentProfile();
+    showApp();
+    await refreshAppData();
+  }
+  sb.auth.onAuthStateChange(async (_event, session) => {
+    currentUser=session?.user || null;
+  });
+});
 </script>
 
 </body>

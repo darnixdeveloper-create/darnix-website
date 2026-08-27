@@ -528,6 +528,7 @@ button { font-family: 'DM Sans', sans-serif; cursor: pointer; border: none; outl
   .testi-grid { grid-template-columns: 1fr; gap: 18px; }
   .home-footer { padding: 32px 22px; flex-direction: column; align-items: flex-start; }
 }
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 </style>
 </head>
 <body>
@@ -678,7 +679,37 @@ button { font-family: 'DM Sans', sans-serif; cursor: pointer; border: none; outl
   <div class="app-topbar">
     <div class="app-brand">♥ Clark</div>
     <div style="display:flex;gap:10px;align-items:center;">
-      <button style="width:36px;height:36px;border-radius:50%;background:var(--rose-pale);border:none;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;color:var(--rose);">🔔</button>
+      <div style="position:relative;">
+  <button id="notificationBell"
+    onclick="toggleNotifications()"
+    style="width:36px;height:36px;border-radius:50%;background:var(--rose-pale);border:none;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;color:var(--rose);">
+    🔔
+  </button>
+
+  <span id="notificationBadge"
+    style="display:none;position:absolute;top:-3px;right:-3px;background:var(--rose);color:white;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;align-items:center;justify-content:center;border:2px solid white;">
+    0
+  </span>
+
+  <div id="notificationPanel"
+    style="display:none;position:absolute;right:0;top:46px;width:320px;max-height:400px;overflow-y:auto;background:white;border-radius:18px;box-shadow:0 12px 35px rgba(24,8,15,.18);border:1px solid var(--border);z-index:9999;">
+
+    <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <strong>Notifications</strong>
+      <button onclick="markAllNotificationsRead()"
+        style="background:none;color:var(--rose);font-size:.75rem;">
+        Mark all read
+      </button>
+    </div>
+
+    <div id="notificationList">
+      <div style="padding:25px;text-align:center;color:var(--muted);font-size:.85rem;">
+        No notifications yet
+      </div>
+    </div>
+
+  </div>
+</div>
       <img id="topbarAvatar" src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--rose-pale);cursor:pointer;" alt="You" onclick="switchTab('profile')" />
     </div>
   </div>
@@ -1074,11 +1105,16 @@ async function handleSignup() {
   if (error) { showToast('❌ ' + error.message); return; }
   if (!data.session) { showToast('✅ Account created! Angalia email yako kuthibitisha account.'); return; }
   currentUser = data.user;
-  await loadCurrentProfile();
-  closeModal();
-  showApp();
-  await refreshAppData();
-  showToast('🎉 Umejiunga na Darnix!');
+
+await loadCurrentProfile();
+
+closeModal();
+showApp();
+
+await refreshAppData();
+
+await loadNotifications();
+subscribeToNotifications();
 }
 async function handleSignin() {
   const {email,password} = getSigninFields();
@@ -1089,11 +1125,19 @@ async function handleSignin() {
   if (btn) { btn.disabled = false; btn.textContent = 'Sign In →'; }
   if (error) { showToast('❌ ' + error.message); return; }
   currentUser = data.user;
-  await loadCurrentProfile();
-  closeModal();
-  showApp();
-  await refreshAppData();
-  showToast('👋 Karibu tena!');
+
+await loadCurrentProfile();
+
+closeModal();
+showApp();
+
+await refreshAppData();
+
+await loadNotifications();
+subscribeToNotifications();
+
+showToast('👋 Karibu tena!');
+
 }
 async function enterApp() {
   // Kept for old buttons; authentication is now handled by handleSignup/handleSignin.
@@ -1266,6 +1310,215 @@ async function saveEditProfile() {
   closeEditProfile();
   showToast('✅ Profaili imehifadhiwa kwenye database!');
   await loadDiscoverProfiles();
+}
+
+// ===== REAL NOTIFICATIONS =====
+
+let notificationChannel = null;
+let notifications = [];
+
+async function loadNotifications() {
+  if (!currentUser) return;
+
+  const { data, error } = await sb
+    .from('notifications')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error('Notifications error:', error);
+    return;
+  }
+
+  notifications = data || [];
+  renderNotifications();
+}
+
+function renderNotifications() {
+  const list = document.getElementById('notificationList');
+  const badge = document.getElementById('notificationBadge');
+
+  if (!list || !badge) return;
+
+  const unread = notifications.filter(n => !n.read).length;
+
+  if (unread > 0) {
+    badge.style.display = 'flex';
+    badge.textContent = unread > 9 ? '9+' : unread;
+  } else {
+    badge.style.display = 'none';
+  }
+
+  if (!notifications.length) {
+    list.innerHTML = `
+      <div style="padding:25px;text-align:center;color:var(--muted);font-size:.85rem;">
+        No notifications yet ❤️
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = notifications.map(n => {
+
+    let icon = '🔔';
+
+    if (n.type === 'like') icon = '❤️';
+    if (n.type === 'match') icon = '💕';
+    if (n.type === 'message') icon = '💬';
+
+    return `
+      <div
+        onclick="openNotification('${n.id}')"
+        style="
+          padding:14px 16px;
+          border-bottom:1px solid var(--border);
+          cursor:pointer;
+          background:${n.read ? 'white' : 'var(--rose-pale)'};
+          transition:.2s;
+        "
+      >
+        <div style="display:flex;gap:12px;align-items:flex-start;">
+          <div style="
+            width:38px;
+            height:38px;
+            border-radius:50%;
+            background:var(--rose-pale);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            flex-shrink:0;
+          ">
+            ${icon}
+          </div>
+
+          <div style="flex:1;">
+            <div style="font-size:.85rem;font-weight:700;color:var(--dark);">
+              ${escapeNotificationText(n.title)}
+            </div>
+
+            <div style="font-size:.78rem;color:var(--muted);margin-top:3px;line-height:1.4;">
+              ${escapeNotificationText(n.body || '')}
+            </div>
+
+            <div style="font-size:.68rem;color:var(--muted);margin-top:5px;">
+              ${formatNotificationTime(n.created_at)}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeNotificationText(text) {
+  const div = document.createElement('div');
+  div.textContent = text || '';
+  return div.innerHTML;
+}
+
+function formatNotificationTime(date) {
+  const d = new Date(date);
+  const now = new Date();
+  const diff = Math.floor((now - d) / 1000);
+
+  if (diff < 60) return 'Just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
+}
+
+function toggleNotifications() {
+  const panel = document.getElementById('notificationPanel');
+
+  if (!panel) return;
+
+  const isOpen = panel.style.display === 'block';
+
+  panel.style.display = isOpen ? 'none' : 'block';
+
+  if (!isOpen) {
+    loadNotifications();
+  }
+}
+
+async function openNotification(id) {
+  const notification = notifications.find(n => n.id === id);
+
+  if (!notification) return;
+
+  if (!notification.read) {
+    await sb
+      .from('notifications')
+      .update({ read: true })
+      .eq('id', id)
+      .eq('user_id', currentUser.id);
+
+    notification.read = true;
+    renderNotifications();
+  }
+
+  // Close notification panel
+  document.getElementById('notificationPanel').style.display = 'none';
+
+  if (notification.type === 'match') {
+    switchTab('matches');
+  } else if (notification.type === 'message') {
+    switchTab('matches');
+  }
+}
+
+async function markAllNotificationsRead() {
+  if (!currentUser) return;
+
+  const { error } = await sb
+    .from('notifications')
+    .update({ read: true })
+    .eq('user_id', currentUser.id)
+    .eq('read', false);
+
+  if (error) {
+    showToast('❌ ' + error.message);
+    return;
+  }
+
+  notifications.forEach(n => n.read = true);
+  renderNotifications();
+
+  showToast('✅ Notifications zimesomwa zote');
+}
+
+function subscribeToNotifications() {
+
+  if (!currentUser) return;
+
+  if (notificationChannel) {
+    sb.removeChannel(notificationChannel);
+  }
+
+  notificationChannel = sb
+    .channel('notifications-' + currentUser.id)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notifications',
+        filter: 'user_id=eq.' + currentUser.id
+      },
+      payload => {
+
+        notifications.unshift(payload.new);
+
+        renderNotifications();
+
+        showToast(
+          '🔔 ' +
+          (payload.new.title || 'New notification')
+        );
+      }
+    )
+    .subscribe();
 }
 
 function showToast(msg) {
@@ -1599,11 +1852,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (SUPABASE_PUBLISHABLE_KEY.includes('PASTE_YOUR')) return;
   const {data} = await sb.auth.getSession();
   if (data.session) {
-    currentUser=data.session.user;
-    await loadCurrentProfile();
-    showApp();
-    await refreshAppData();
-  }
+  currentUser = data.session.user;
+
+  await loadCurrentProfile();
+
+  showApp();
+
+  await refreshAppData();
+
+  await loadNotifications();
+  subscribeToNotifications();
+}
+
   sb.auth.onAuthStateChange(async (_event, session) => {
     currentUser=session?.user || null;
   });

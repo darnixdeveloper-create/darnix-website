@@ -838,7 +838,7 @@ button { font-family: 'DM Sans', sans-serif; cursor: pointer; border: none; outl
             <div class="settings-item"><div class="settings-left"><div class="settings-icon">❓</div><div class="settings-label">Help & Support</div></div><span class="settings-chevron">›</span></div>
           </div>
         </div>
-        <button class="logout-btn" onclick="showHome()">← Back to Home</button>
+        <button class="logout-btn" onclick="logoutAndGoHome()">← Back to Home</button>
       </div>
     </div>
 
@@ -1106,6 +1106,8 @@ async function handleSignup() {
   if (!data.session) { showToast('✅ Account created! Angalia email yako kuthibitisha account.'); return; }
   currentUser = data.user;
 
+await setUserOnline();
+
 await loadCurrentProfile();
 
 closeModal();
@@ -1126,6 +1128,8 @@ async function handleSignin() {
   if (error) { showToast('❌ ' + error.message); return; }
   currentUser = data.user;
 
+await setUserOnline();
+
 await loadCurrentProfile();
 
 closeModal();
@@ -1143,6 +1147,70 @@ async function enterApp() {
   // Kept for old buttons; authentication is now handled by handleSignup/handleSignin.
   if (currentUser) { closeModal(); showApp(); await refreshAppData(); }
 }
+
+// ===== ONLINE / OFFLINE STATUS =====
+
+async function setUserOnline() {
+  if (!currentUser) {
+    console.log('❌ No current user found');
+    return;
+  }
+
+  console.log('Trying to set online:', currentUser.id);
+
+  const { data, error } = await sb
+    .from('profiles')
+    .update({
+      online: true,
+      last_seen: new Date().toISOString()
+    })
+    .eq('id', currentUser.id)
+    .select();
+
+  console.log('Online update result:', data);
+
+  if (error) {
+    console.error('❌ Online status error:', error);
+  } else {
+    console.log('🟢 User is now ONLINE');
+  }
+}
+
+async function setUserOffline() {
+  if (!currentUser) return;
+
+  const { error } = await sb
+    .from('profiles')
+    .update({
+      online: false,
+      last_seen: new Date().toISOString()
+    })
+    .eq('id', currentUser.id);
+
+  if (error) {
+    console.error('Offline status error:', error);
+  } else {
+    console.log('⚫ User is offline');
+  }
+}
+
+async function logoutAndGoHome() {
+
+  // Weka user offline kwanza
+  await setUserOffline();
+
+  // Ondoa login session
+  await sb.auth.signOut();
+
+  // Rudisha homepage
+  currentUser = null;
+  currentProfile = null;
+
+  showHome();
+
+  showToast('👋 Umetoka kwenye account yako');
+}
+
 async function loadCurrentProfile() {
   if (!currentUser) return null;
   let {data,error} = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
@@ -1199,7 +1267,7 @@ async function loadMatches() {
   const {data:people,error:e2} = await sb.from('profiles').select('*').in('id',ids);
   if (e2) { showToast('❌ Match profiles error: ' + e2.message); return; }
   matchData.length=0;
-  (people||[]).forEach(p=>{ const m=(data||[]).find(x=>x.user1_id===p.id||x.user2_id===p.id); matchData.push({id:p.id,matchId:m.id,name:p.full_name,age:p.age,img:p.avatar_url||'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80',last:'Start a conversation 💬',time:'',unread:0,online:false}); });
+  (people||[]).forEach(p=>{ const m=(data||[]).find(x=>x.user1_id===p.id||x.user2_id===p.id); matchData.push({id:p.id,matchId:m.id,name:p.full_name,age:p.age,img:p.avatar_url||'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80',last:'Start a conversation 💬',time:'',unread:0,online:p.online === true}); });
   buildMatchesUI();
 }
 
@@ -1853,6 +1921,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const {data} = await sb.auth.getSession();
   if (data.session) {
   currentUser = data.session.user;
+  
+  await setuserOnline();
 
   await loadCurrentProfile();
 
